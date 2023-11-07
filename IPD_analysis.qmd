@@ -1,0 +1,1957 @@
+---
+title: "IPD.iron.bygender"
+format: html
+editor: visual
+---
+
+```{r dependencies, include=FALSE}
+pacman::p_load(haven,lme4,foreign,tidyverse,jomo,mitml,kableExtra,labelled,
+               mice,ggmice,lattice,pan,mitools,gridExtra, easystats)
+
+options(print_format="tex")
+```
+
+### Subset data
+
+```{r}
+#load files
+data_frame <- readRDS(file=here::here("data_files","data_frame.RDS"))
+data_frame1 <- readRDS(file=here::here("data_files","data_frame1.RDS"))
+data_frame_sg <- readRDS(file=here::here("data_files","data_frame_sg.RDS"))
+#load imputed dataset
+imp.mitml <- readRDS(file = here::here("data_files","imputed_data.rds"))
+
+#subset males dataset
+df.comp_M <- data_frame |>
+  filter(age>=18 & gender=="0") |>
+  dplyr::mutate(iron = scale(iron), 
+       ferritin = scale(ferritin), 
+       transferrin = scale(transferrin), 
+       tfsat = scale(tfsat), 
+       age = scale(age), 
+       creatinine = scale(creatinine), 
+       hdlc = scale(hdlc), 
+       ldlc = scale(ldlc), 
+       triacylglycerols = scale(triacylglycerols),
+       bmi = scale(bmi), 
+       crp = scale(crp),
+       sbp= scale(sbp),
+       dbp=scale(dbp),
+       hb=scale(hb))
+
+#dataset for females
+df.comp_F <- data_frame |>
+  filter(age>=18 & gender=="1") |>
+  dplyr::mutate(iron = scale(iron), 
+       ferritin = scale(ferritin), 
+       transferrin = scale(transferrin), 
+       tfsat = scale(tfsat), 
+       age = scale(age), 
+       creatinine = scale(creatinine), 
+       hdlc = scale(hdlc), 
+       ldlc = scale(ldlc), 
+       triacylglycerols = scale(triacylglycerols),
+       bmi = scale(bmi), 
+       crp = scale(crp),
+       sbp= scale(sbp),
+       dbp=scale(dbp),
+       hb=scale(hb))
+```
+
+### Regression functions
+
+```{r}
+library(lmerTest)
+
+#function for males
+#define the function to carry out regression and summarize the result
+regression_M= function(model,var) {
+  form = reformulate(c(model,var), response = imt)
+  lmer(form, data = df.comp_M) |> 
+    broomExtra::tidy(conf.int=TRUE)
+}
+
+#function for females
+#define the function to carry out regression and summarize the result
+regression_F= function(model,var) {
+  form = reformulate(c(model,var), response = imt)
+  lmer(form, data = df.comp_F) |> 
+    broomExtra::tidy(conf.int=TRUE)
+}
+
+#define the function to carry out regression and summarize the result
+regression_child_M= function(model,var) {
+  form = reformulate(c(model,var), response = imt)
+  lmer(form, data = data_frame |> filter(age_gp=="Children and Adolescents")) |> 
+    broomExtra::tidy(conf.int=TRUE)
+}
+
+#function for females
+#define the function to carry out regression and summarize the result
+regression_child_F= function(model,var) {
+  form = reformulate(c(model,var), response = imt)
+  lmer(form, data = data_frame |> filter(age_gp=="Children and Adolescents")) |> 
+    broomExtra::tidy(conf.int=TRUE)
+}
+
+#define variables
+imt="imt" 
+iron="iron"
+ferritin="ferritin"
+transferrin="transferrin"
+tfsat="tfsat"
+
+#define models
+model1 = c("1","(1 | study)")
+model2=c(model1,"age","diabetes","bmi","smoking")
+
+```
+
+### Iron: Males
+
+```{r}
+
+# MALES
+# models 1 and 2 for iron
+iron_M.m1 <- regression_M(model1, iron)
+
+# Unimputed models for males
+iron_M.m1 <- iron_M.m1 |>
+  filter(term == "iron") |>
+  select(estimate, p.value, conf.low, conf.high) |>
+  mutate(study = "Unimputed: Model 1", gender = "M")
+
+# Imputed models for males
+mitml.tidy <- function(model) {
+  data.frame(estimate = model$estimates[2, 1],
+             p.value = model$estimates[2, 5],
+             conf.low = model$estimates[2, 1] - (1.96 * model$estimates[2, 2]),
+             conf.high = model$estimates[2, 1] + (1.96 * model$estimates[2, 2]))
+}
+
+iron_imp_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 1", gender = "M")
+
+iron_imp_M.m2 <- with(imp.mitml, lmer(imt ~ 1 + iron + age + bmi + smoking + diabetes + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 2", gender = "M")
+
+iron_imp_M.m3 <- with(imp.mitml, lmer(imt ~ 1 + iron + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                        bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 3", gender = "M")
+
+# Subgroup analysis for males
+# iron vs anemia
+iron_anemia_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                         subset = which(data_frame1$anemia == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Anemia: Model 1", gender = "M")
+
+# iron vs thalassemia
+iron_thal_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                       subset = which(data_frame_sg$thalassemia == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Thalassemia: Model 1", gender = "M")
+
+# iron vs hemochromatosis
+iron_hemoch_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                         subset = which(data_frame_sg$hemochromatosis == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Hemochromatosis: Model 1", gender = "M")
+
+# iron vs ckd
+iron_ckd_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                      subset = which(data_frame1$ckd == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CKD: Model 1", gender = "M")
+
+# iron vs diabetes
+iron_diabetes_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                           subset = which(data_frame1$diabetes == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Diabetes: Model 1", gender = "M")
+
+# iron vs hypertension
+iron_ht_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                     subset = which(data_frame1$hypertension == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Hypertension: Model 1", gender = "M")
+
+
+
+# iron vs age cat
+iron_children_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                           subset = which(data_frame1$age_cat == "Children" &
+                                                            data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children: Model 1", gender = "M")
+
+#
+iron_adolescents_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                              subset = which(data_frame1$age_cat == "Adolescents" &
+                                                               data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adolescents: Model 1", gender = "M")
+
+# Adults
+iron_adults_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                         subset = which(data_frame1$age_cat == "Adults" &
+                                                          data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adults: Model 1", gender = "M")
+
+# Older Adults
+iron_old.adults_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                             subset = which(data_frame1$age_cat == "Older Adults" &
+                                                              data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Older Adults: Model 1", gender = "M")
+
+
+# Imputed models for iron in male Children and Adolescents
+
+iron_imp_child_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 1", gender = "M")
+
+iron_imp_child_M.m2 <- with(imp.mitml, lmer(imt ~ 1 + iron + age + bmi + smoking +
+                                              (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 2", gender = "M")
+
+iron_imp_child_M.m3 <- with(imp.mitml, lmer(imt ~ 1 + iron + age +
+                                              creatinine + hdlc + ldlc + triacylglycerols +
+                                              bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 3", gender = "M")
+
+# iron vs CRP≥ 3 mg/dL
+iron_CRPhi_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                     subset = which(data_frame1$inflammation == "2" & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP≥ 3 mg/dL: Model 1", gender = "M")
+
+# iron vs CRP 1-3 mg/dL
+iron_CRPint_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                       subset = which(data_frame1$inflammation == "1" & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP 1-3 mg/dL: Model 1", gender = "M")
+
+# iron vs CRP <1 mg/dL
+iron_CRPlo_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                       subset = which(data_frame1$inflammation == "0" & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP< 1 mg/dL: Model 1", gender = "M")
+
+# Combine into one dataframe
+iron_M.all <- rbind(iron_imp_M.m1, iron_imp_M.m2, iron_imp_M.m3, iron_anemia_M.m1,
+                    iron_thal_M.m1, iron_hemoch_M.m1, iron_ckd_M.m1,
+                    iron_diabetes_M.m1, iron_ht_M.m1, iron_children_M.m1,
+                    iron_adolescents_M.m1, iron_adults_M.m1, iron_old.adults_M.m1, 
+                    iron_M.m1, iron_imp_child_M.m1, iron_imp_child_M.m2, 
+                    iron_imp_child_M.m3, iron_CRPhi_M.m1, iron_CRPint_M.m1,iron_CRPlo_M.m1)
+
+rm(iron_imp_M.m1, iron_imp_M.m2, iron_imp_M.m3, iron_anemia_M.m1,
+   iron_thal_M.m1, iron_hemoch_M.m1, iron_ckd_M.m1,
+   iron_diabetes_M.m1, iron_ht_M.m1, iron_children_M.m1,
+   iron_adolescents_M.m1, iron_adults_M.m1, iron_old.adults_M.m1, 
+   iron_M.m1, iron_imp_child_M.m1, iron_imp_child_M.m2, 
+   iron_imp_child_M.m3, iron_CRPhi_M.m1, iron_CRPint_M.m1,iron_CRPlo_M.m1)
+saveRDS(iron_M.all,file=here::here("data_files","iron_M.all.RDS"))
+beepr::beep()
+
+```
+
+### Iron: Females
+
+```{r}
+
+## females
+# models 1 and 2 for iron
+iron_F.m1 <- regression_F(model1, iron)
+
+# Unimputed models for females
+iron_F.m1 <- iron_F.m1 |>
+  filter(term == "iron") |>
+  select(estimate, p.value, conf.low, conf.high) |>
+  mutate(study = "Unimputed: Model 1", gender = "F")
+
+iron_imp_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 1", gender = "F")
+
+iron_imp_F.m2 <- with(imp.mitml, lmer(imt ~ 1 + iron + age + bmi + smoking + diabetes + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 2", gender = "F")
+
+iron_imp_F.m3 <- with(imp.mitml, lmer(imt ~ 1 + iron + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                        bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 3", gender = "F")
+
+# Subgroup analysis for females
+# iron vs anemia
+iron_anemia_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                         subset = which(data_frame1$anemia == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Anemia: Model 1", gender = "F")
+
+
+# iron vs ckd
+iron_ckd_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                      subset = which(data_frame1$ckd == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CKD: Model 1", gender = "F")
+
+# iron vs diabetes
+iron_diabetes_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                           subset = which(data_frame1$diabetes == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Diabetes: Model 1", gender = "F")
+
+# iron vs hypertension
+iron_ht_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                     subset = which(data_frame1$hypertension == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Hypertension: Model 1", gender = "F")
+
+# iron vs age cat
+iron_children_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                           subset = which(data_frame1$age_cat == "Children" &
+                                                            data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children: Model 1", gender = "F")
+
+# Adolescents
+iron_adolescents_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                              subset = which(data_frame1$age_cat == "Adolescents" &
+                                                               data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adolescents: Model 1", gender = "F")
+
+# Adults
+iron_adults_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                         subset = which(data_frame1$age_cat == "Adults" &
+                                                          data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adults: Model 1", gender = "F")
+
+# Older Adults
+iron_old.adults_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                             subset = which(data_frame1$age_cat == "Older Adults" &
+                                                              data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Older Adults: Model 1", gender = "F")
+
+
+# Children and Adolescents groups
+# iron vs children
+
+# Imputed models for Children and Adolescents females
+iron_imp_child_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 1", gender = "F")
+
+iron_imp_child_F.m2 <- with(imp.mitml, lmer(imt ~ 1 + iron + age + bmi + smoking +
+                                              (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 2", gender = "F")
+
+iron_imp_child_F.m3 <- with(imp.mitml, lmer(imt ~ 1 + iron + age +
+                                              creatinine + hdlc + ldlc + triacylglycerols +
+                                              bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 3", gender = "F")
+
+# iron vs CRP≥ 3 mg/dL
+iron_CRPhi_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                        subset = which(data_frame1$inflammation == "2" & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP≥ 3 mg/dL: Model 1", gender = "F")
+
+# iron vs CRPint
+iron_CRPint_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                         subset = which(data_frame1$inflammation == "1" & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP 1-3 mg/dL: Model 1", gender = "F")
+
+# iron vs CRP <1 mg/dL
+iron_CRPlo_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + iron + (1 | clus),
+                                        subset = which(data_frame1$inflammation == "0" & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP< 1 mg/dL: Model 1", gender = "F")
+
+# Combine into one dataframe
+iron_F.all <- rbind(iron_imp_F.m1, iron_imp_F.m2, iron_imp_F.m3, iron_anemia_F.m1,
+                     iron_ckd_F.m1,iron_diabetes_F.m1,
+                    iron_ht_F.m1,  iron_children_F.m1, iron_adolescents_F.m1,
+                    iron_adults_F.m1, iron_old.adults_F.m1, iron_F.m1,
+                    iron_imp_child_F.m1, iron_imp_child_F.m2,
+                    iron_imp_child_F.m3, iron_CRPhi_F.m1, iron_CRPint_F.m1,iron_CRPlo_F.m1)
+
+rm(iron_imp_F.m1, iron_imp_F.m2, iron_imp_F.m3, iron_anemia_F.m1,
+   iron_ckd_F.m1,iron_diabetes_F.m1,
+   iron_ht_F.m1,  iron_children_F.m1, iron_adolescents_F.m1,
+   iron_adults_F.m1, iron_old.adults_F.m1, iron_F.m1,
+   iron_imp_child_F.m1, iron_imp_child_F.m2,
+   iron_imp_child_F.m3, iron_CRPhi_F.m1, iron_CRPint_F.m1,iron_CRPlo_F.m1)
+
+
+saveRDS(iron_F.all,file = here::here("data_files","iron_F.all.rds"))
+```
+
+### Ferritin: Males
+
+```{r}
+
+# MALES
+# models 1 and 2 for ferritin
+ferritin_M.m1 <- regression_M(model1, ferritin)
+
+# Unimputed models for males
+ferritin_M.m1 <- ferritin_M.m1 |>
+  filter(term == "ferritin") |>
+  select(estimate, p.value, conf.low, conf.high) |>
+  mutate(study = "Unimputed: Model 1", gender = "M")
+
+# Imputed models for males
+mitml.tidy <- function(model) {
+  data.frame(estimate = model$estimates[2, 1],
+             p.value = model$estimates[2, 5],
+             conf.low = model$estimates[2, 1] - (1.96 * model$estimates[2, 2]),
+             conf.high = model$estimates[2, 1] + (1.96 * model$estimates[2, 2]))
+}
+
+ferritin_imp_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 1", gender = "M")
+
+ferritin_imp_M.m2 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + bmi + smoking + diabetes + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 2", gender = "M")
+
+ferritin_imp_M.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                        bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 3", gender = "M")
+
+# Subgroup analysis for males
+# ferritin vs anemia
+ferritin_anemia_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                         subset = which(data_frame1$anemia == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Anemia: Model 1", gender = "M")
+
+# ferritin vs thalassemia
+ferritin_thal_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                       subset = which(data_frame_sg$thalassemia == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Thalassemia: Model 1", gender = "M")
+
+# ferritin vs hemochromatosis
+ferritin_hemoch_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                         subset = which(data_frame_sg$hemochromatosis == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Hemochromatosis: Model 1", gender = "M")
+
+# ferritin vs ckd
+ferritin_ckd_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                      subset = which(data_frame1$ckd == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CKD: Model 1", gender = "M")
+
+# ferritin vs diabetes
+ferritin_diabetes_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                           subset = which(data_frame1$diabetes == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Diabetes: Model 1", gender = "M")
+
+# ferritin vs hypertension
+ferritin_ht_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                     subset = which(data_frame1$hypertension == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Hypertension: Model 1", gender = "M")
+
+
+
+# ferritin vs age cat
+ferritin_children_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                           subset = which(data_frame1$age_cat == "Children" &
+                                                            data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children: Model 1", gender = "M")
+
+#
+ferritin_adolescents_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                              subset = which(data_frame1$age_cat == "Adolescents" &
+                                                               data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adolescents: Model 1", gender = "M")
+
+# Adults
+ferritin_adults_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                         subset = which(data_frame1$age_cat == "Adults" &
+                                                          data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adults: Model 1", gender = "M")
+
+# Older Adults
+ferritin_old.adults_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                             subset = which(data_frame1$age_cat == "Older Adults" &
+                                                              data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Older Adults: Model 1", gender = "M")
+
+
+# Imputed models for ferritin in male Children and Adolescents
+
+ferritin_imp_child_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 1", gender = "M")
+
+ferritin_imp_child_M.m2 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + bmi + smoking +
+                                              (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 2", gender = "M")
+
+ferritin_imp_child_M.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age +
+                                              creatinine + hdlc + ldlc + triacylglycerols +
+                                              bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 3", gender = "M")
+
+# ferritin vs CRP≥ 3 mg/dL
+ferritin_CRPhi_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                     subset = which(data_frame1$inflammation == "2" & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP≥ 3 mg/dL: Model 1", gender = "M")
+
+# ferritin vs CRP≥ 3 mg/dL
+ferritin_CRPint_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                       subset = which(data_frame1$inflammation == "1" & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP 1-3 mg/dL: Model 1", gender = "M")
+
+# ferritin vs CRP <1 mg/dL
+ferritin_CRPlo_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                        subset = which(data_frame1$inflammation == "0" & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP< 1 mg/dL: Model 1", gender = "M")
+
+# Combine into one dataframe
+ferritin_M.all <- rbind(ferritin_imp_M.m1, ferritin_imp_M.m2, ferritin_imp_M.m3, ferritin_anemia_M.m1,
+                    ferritin_thal_M.m1, ferritin_hemoch_M.m1, ferritin_ckd_M.m1,
+                    ferritin_diabetes_M.m1, ferritin_ht_M.m1, ferritin_children_M.m1,
+                    ferritin_adolescents_M.m1, ferritin_adults_M.m1, ferritin_old.adults_M.m1, 
+                    ferritin_M.m1, ferritin_imp_child_M.m1, ferritin_imp_child_M.m2, 
+                    ferritin_imp_child_M.m3, ferritin_CRPhi_M.m1, ferritin_CRPint_M.m1,ferritin_CRPlo_M.m1)
+
+rm(ferritin_imp_M.m1, ferritin_imp_M.m2, ferritin_imp_M.m3, ferritin_anemia_M.m1,
+   ferritin_thal_M.m1, ferritin_hemoch_M.m1, ferritin_ckd_M.m1,
+   ferritin_diabetes_M.m1, ferritin_ht_M.m1, ferritin_children_M.m1,
+   ferritin_adolescents_M.m1, ferritin_adults_M.m1, ferritin_old.adults_M.m1, 
+   ferritin_M.m1, ferritin_imp_child_M.m1, ferritin_imp_child_M.m2, 
+   ferritin_imp_child_M.m3, ferritin_CRPhi_M.m1, ferritin_CRPint_M.m1,ferritin_CRPlo_M.m1)
+saveRDS(ferritin_M.all,file=here::here("data_files","ferritin_M.all.RDS"))
+beepr::beep()
+```
+
+### Ferritin: Females
+
+```{r}
+
+## females
+# models 1 and 2 for ferritin
+ferritin_F.m1 <- regression_F(model1, ferritin)
+
+# Unimputed models for females
+ferritin_F.m1 <- ferritin_F.m1 |>
+  filter(term == "ferritin") |>
+  select(estimate, p.value, conf.low, conf.high) |>
+  mutate(study = "Unimputed: Model 1", gender = "F")
+
+ferritin_imp_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 1", gender = "F")
+
+ferritin_imp_F.m2 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + bmi + smoking + diabetes + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 2", gender = "F")
+
+ferritin_imp_F.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                        bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 3", gender = "F")
+
+# Subgroup analysis for females
+# ferritin vs anemia
+ferritin_anemia_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                         subset = which(data_frame1$anemia == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Anemia: Model 1", gender = "F")
+
+# ferritin vs ckd
+ferritin_ckd_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                      subset = which(data_frame1$ckd == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CKD: Model 1", gender = "F")
+
+# ferritin vs diabetes
+ferritin_diabetes_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                           subset = which(data_frame1$diabetes == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Diabetes: Model 1", gender = "F")
+
+# ferritin vs hypertension
+ferritin_ht_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                     subset = which(data_frame1$hypertension == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Hypertension: Model 1", gender = "F")
+
+# ferritin vs age cat
+ferritin_children_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                           subset = which(data_frame1$age_cat == "Children" &
+                                                            data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children: Model 1", gender = "F")
+
+# Adolescents
+ferritin_adolescents_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                              subset = which(data_frame1$age_cat == "Adolescents" &
+                                                               data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adolescents: Model 1", gender = "F")
+
+# Adults
+ferritin_adults_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                         subset = which(data_frame1$age_cat == "Adults" &
+                                                          data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adults: Model 1", gender = "F")
+
+# Older Adults
+ferritin_old.adults_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                             subset = which(data_frame1$age_cat == "Older Adults" &
+                                                              data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Older Adults: Model 1", gender = "F")
+
+
+# Children and Adolescents groups
+# ferritin vs children
+
+# Imputed models for Children and Adolescents females
+ferritin_imp_child_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 1", gender = "F")
+
+ferritin_imp_child_F.m2 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + bmi + smoking +
+                                              (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 2", gender = "F")
+
+ferritin_imp_child_F.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age +
+                                              creatinine + hdlc + ldlc + triacylglycerols +
+                                              bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 3", gender = "F")
+
+# ferritin vs CRP≥ 3 mg/dL
+ferritin_CRPhi_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                        subset = which(data_frame1$inflammation == "2" & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP≥ 3 mg/dL: Model 1", gender = "F")
+
+# ferritin vs CRPint
+ferritin_CRPint_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                         subset = which(data_frame1$inflammation == "1" & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP 1-3 mg/dL: Model 1", gender = "F")
+
+# ferritin vs CRP <1 mg/dL
+ferritin_CRPlo_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + (1 | clus),
+                                        subset = which(data_frame1$inflammation == "0" & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP< 1 mg/dL: Model 1", gender = "F")
+
+# Combine into one dataframe
+ferritin_F.all <- rbind(ferritin_imp_F.m1, ferritin_imp_F.m2, ferritin_imp_F.m3, ferritin_anemia_F.m1,
+                     ferritin_ckd_F.m1,ferritin_diabetes_F.m1,
+                    ferritin_ht_F.m1,  ferritin_children_F.m1, ferritin_adolescents_F.m1,
+                    ferritin_adults_F.m1, ferritin_old.adults_F.m1, ferritin_F.m1,
+                    ferritin_imp_child_F.m1, ferritin_imp_child_F.m2,
+                    ferritin_imp_child_F.m3, ferritin_CRPhi_F.m1, ferritin_CRPint_F.m1,ferritin_CRPlo_F.m1)
+
+rm(ferritin_imp_F.m1, ferritin_imp_F.m2, ferritin_imp_F.m3, ferritin_anemia_F.m1,
+    ferritin_ckd_F.m1,ferritin_diabetes_F.m1,
+   ferritin_ht_F.m1,  ferritin_children_F.m1, ferritin_adolescents_F.m1,
+   ferritin_adults_F.m1, ferritin_old.adults_F.m1, ferritin_F.m1,
+   ferritin_imp_child_F.m1, ferritin_imp_child_F.m2,
+   ferritin_imp_child_F.m3, ferritin_CRPhi_F.m1, ferritin_CRPint_F.m1,ferritin_CRPlo_F.m1)
+
+
+saveRDS(ferritin_F.all,file = here::here("data_files","ferritin_F.all.rds"))
+```
+
+### Transferrin: Males
+
+```{r}
+
+# MALES
+# models 1 and 2 for transferrin
+transferrin_M.m1 <- regression_M(model1, transferrin)
+
+# Unimputed models for males
+transferrin_M.m1 <- transferrin_M.m1 |>
+  filter(term == "transferrin") |>
+  select(estimate, p.value, conf.low, conf.high) |>
+  mutate(study = "Unimputed: Model 1", gender = "M")
+
+# Imputed models for males
+mitml.tidy <- function(model) {
+  data.frame(estimate = model$estimates[2, 1],
+             p.value = model$estimates[2, 5],
+             conf.low = model$estimates[2, 1] - (1.96 * model$estimates[2, 2]),
+             conf.high = model$estimates[2, 1] + (1.96 * model$estimates[2, 2]))
+}
+
+transferrin_imp_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 1", gender = "M")
+
+transferrin_imp_M.m2 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + age + bmi + smoking + diabetes + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 2", gender = "M")
+
+transferrin_imp_M.m3 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                        bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 3", gender = "M")
+
+# Subgroup analysis for males
+# transferrin vs anemia
+transferrin_anemia_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                         subset = which(data_frame1$anemia == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Anemia: Model 1", gender = "M")
+
+# transferrin vs thalassemia
+transferrin_thal_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                       subset = which(data_frame_sg$thalassemia == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Thalassemia: Model 1", gender = "M")
+
+# transferrin vs hemochromatosis
+transferrin_hemoch_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                         subset = which(data_frame_sg$hemochromatosis == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Hemochromatosis: Model 1", gender = "M")
+
+# transferrin vs ckd
+transferrin_ckd_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                      subset = which(data_frame1$ckd == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CKD: Model 1", gender = "M")
+
+# transferrin vs diabetes
+transferrin_diabetes_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                           subset = which(data_frame1$diabetes == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Diabetes: Model 1", gender = "M")
+
+# transferrin vs hypertension
+transferrin_ht_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                     subset = which(data_frame1$hypertension == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Hypertension: Model 1", gender = "M")
+
+
+
+# transferrin vs age cat
+transferrin_children_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                           subset = which(data_frame1$age_cat == "Children" &
+                                                            data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children: Model 1", gender = "M")
+
+#
+transferrin_adolescents_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                              subset = which(data_frame1$age_cat == "Adolescents" &
+                                                               data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adolescents: Model 1", gender = "M")
+
+# Adults
+transferrin_adults_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                         subset = which(data_frame1$age_cat == "Adults" &
+                                                          data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adults: Model 1", gender = "M")
+
+# Older Adults
+transferrin_old.adults_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                             subset = which(data_frame1$age_cat == "Older Adults" &
+                                                              data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Older Adults: Model 1", gender = "M")
+
+
+# Imputed models for transferrin in male Children and Adolescents
+
+transferrin_imp_child_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 1", gender = "M")
+
+transferrin_imp_child_M.m2 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + age + bmi + smoking +
+                                              (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 2", gender = "M")
+
+transferrin_imp_child_M.m3 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + age +
+                                              creatinine + hdlc + ldlc + triacylglycerols +
+                                              bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 3", gender = "M")
+
+# transferrin vs CRP≥ 3 mg/dL
+transferrin_CRPhi_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                     subset = which(data_frame1$inflammation == "2" & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP≥ 3 mg/dL: Model 1", gender = "M")
+
+# transferrin vs CRP≥ 3 mg/dL
+transferrin_CRPint_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                       subset = which(data_frame1$inflammation == "1" & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP 1-3 mg/dL: Model 1", gender = "M")
+
+# transferrin vs CRP <1 mg/dL
+transferrin_CRPlo_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                        subset = which(data_frame1$inflammation == "0" & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP< 1 mg/dL: Model 1", gender = "M")
+
+# Combine into one dataframe
+transferrin_M.all <- rbind(transferrin_imp_M.m1, transferrin_imp_M.m2, transferrin_imp_M.m3, transferrin_anemia_M.m1,
+                    transferrin_thal_M.m1, transferrin_hemoch_M.m1, transferrin_ckd_M.m1,
+                    transferrin_diabetes_M.m1, transferrin_ht_M.m1, transferrin_children_M.m1,
+                    transferrin_adolescents_M.m1, transferrin_adults_M.m1, transferrin_old.adults_M.m1, 
+                    transferrin_M.m1, transferrin_imp_child_M.m1, transferrin_imp_child_M.m2, 
+                    transferrin_imp_child_M.m3, transferrin_CRPhi_M.m1, transferrin_CRPint_M.m1,transferrin_CRPlo_M.m1)
+
+rm(transferrin_imp_M.m1, transferrin_imp_M.m2, transferrin_imp_M.m3, transferrin_anemia_M.m1,
+   transferrin_thal_M.m1, transferrin_hemoch_M.m1, transferrin_ckd_M.m1,
+   transferrin_diabetes_M.m1, transferrin_ht_M.m1, transferrin_children_M.m1,
+   transferrin_adolescents_M.m1, transferrin_adults_M.m1, transferrin_old.adults_M.m1, 
+   transferrin_M.m1, transferrin_imp_child_M.m1, transferrin_imp_child_M.m2, 
+   transferrin_imp_child_M.m3, transferrin_CRPhi_M.m1, transferrin_CRPint_M.m1,transferrin_CRPlo_M.m1)
+saveRDS(transferrin_M.all,file=here::here("data_files","transferrin_M.all.RDS"))
+beepr::beep()
+
+```
+
+### Transferrin: Females
+
+```{r}
+
+## females
+# models 1 and 2 for transferrin
+transferrin_F.m1 <- regression_F(model1, transferrin)
+
+# Unimputed models for females
+transferrin_F.m1 <- transferrin_F.m1 |>
+  filter(term == "transferrin") |>
+  select(estimate, p.value, conf.low, conf.high) |>
+  mutate(study = "Unimputed: Model 1", gender = "F")
+
+transferrin_imp_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 1", gender = "F")
+
+transferrin_imp_F.m2 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + age + bmi + smoking + diabetes + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 2", gender = "F")
+
+transferrin_imp_F.m3 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                        bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 3", gender = "F")
+
+# Subgroup analysis for females
+# transferrin vs anemia
+transferrin_anemia_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                         subset = which(data_frame1$anemia == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Anemia: Model 1", gender = "F")
+
+
+# transferrin vs ckd
+transferrin_ckd_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                      subset = which(data_frame1$ckd == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CKD: Model 1", gender = "F")
+
+# transferrin vs diabetes
+transferrin_diabetes_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                           subset = which(data_frame1$diabetes == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Diabetes: Model 1", gender = "F")
+
+# transferrin vs hypertension
+transferrin_ht_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                     subset = which(data_frame1$hypertension == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Hypertension: Model 1", gender = "F")
+
+# transferrin vs age cat
+transferrin_children_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                           subset = which(data_frame1$age_cat == "Children" &
+                                                            data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children: Model 1", gender = "F")
+
+# Adolescents
+transferrin_adolescents_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                              subset = which(data_frame1$age_cat == "Adolescents" &
+                                                               data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adolescents: Model 1", gender = "F")
+
+# Adults
+transferrin_adults_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                         subset = which(data_frame1$age_cat == "Adults" &
+                                                          data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adults: Model 1", gender = "F")
+
+# Older Adults
+transferrin_old.adults_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                             subset = which(data_frame1$age_cat == "Older Adults" &
+                                                              data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Older Adults: Model 1", gender = "F")
+
+
+# Children and Adolescents groups
+# transferrin vs children
+
+# Imputed models for Children and Adolescents females
+transferrin_imp_child_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 1", gender = "F")
+
+transferrin_imp_child_F.m2 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + age + bmi + smoking +
+                                              (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 2", gender = "F")
+
+transferrin_imp_child_F.m3 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + age +
+                                              creatinine + hdlc + ldlc + triacylglycerols +
+                                              bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 3", gender = "F")
+
+# transferrin vs CRP≥ 3 mg/dL
+transferrin_CRPhi_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                        subset = which(data_frame1$inflammation == "2" & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP≥ 3 mg/dL: Model 1", gender = "F")
+
+# transferrin vs CRPint
+transferrin_CRPint_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                         subset = which(data_frame1$inflammation == "1" & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP 1-3 mg/dL: Model 1", gender = "F")
+
+# transferrin vs CRP <1 mg/dL
+transferrin_CRPlo_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + transferrin + (1 | clus),
+                                        subset = which(data_frame1$inflammation == "0" & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP< 1 mg/dL: Model 1", gender = "F")
+
+# Combine into one dataframe
+transferrin_F.all <- rbind(transferrin_imp_F.m1, transferrin_imp_F.m2, transferrin_imp_F.m3, transferrin_anemia_F.m1,
+                     transferrin_ckd_F.m1,transferrin_diabetes_F.m1,
+                    transferrin_ht_F.m1,  transferrin_children_F.m1, transferrin_adolescents_F.m1,
+                    transferrin_adults_F.m1, transferrin_old.adults_F.m1, transferrin_F.m1,
+                    transferrin_imp_child_F.m1, transferrin_imp_child_F.m2,
+                    transferrin_imp_child_F.m3, transferrin_CRPhi_F.m1, transferrin_CRPint_F.m1,transferrin_CRPlo_F.m1)
+
+rm(transferrin_imp_F.m1, transferrin_imp_F.m2, transferrin_imp_F.m3, transferrin_anemia_F.m1,
+    transferrin_ckd_F.m1,transferrin_diabetes_F.m1,
+   transferrin_ht_F.m1,  transferrin_children_F.m1, transferrin_adolescents_F.m1,
+   transferrin_adults_F.m1, transferrin_old.adults_F.m1, transferrin_F.m1,
+   transferrin_imp_child_F.m1, transferrin_imp_child_F.m2,
+   transferrin_imp_child_F.m3, transferrin_CRPhi_F.m1, transferrin_CRPint_F.m1,transferrin_CRPlo_F.m1)
+
+
+saveRDS(transferrin_F.all,file = here::here("data_files","transferrin_F.all.rds"))
+
+```
+
+### TSAT: males
+
+```{r}
+
+# MALES
+# models 1 and 2 for tfsat
+tfsat_M.m1 <- regression_M(model1, tfsat)
+
+# Unimputed models for males
+tfsat_M.m1 <- tfsat_M.m1 |>
+  filter(term == "tfsat") |>
+  select(estimate, p.value, conf.low, conf.high) |>
+  mutate(study = "Unimputed: Model 1", gender = "M")
+
+# Imputed models for males
+mitml.tidy <- function(model) {
+  data.frame(estimate = model$estimates[2, 1],
+             p.value = model$estimates[2, 5],
+             conf.low = model$estimates[2, 1] - (1.96 * model$estimates[2, 2]),
+             conf.high = model$estimates[2, 1] + (1.96 * model$estimates[2, 2]))
+}
+
+tfsat_imp_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 1", gender = "M")
+
+tfsat_imp_M.m2 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + age + bmi + smoking + diabetes + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 2", gender = "M")
+
+tfsat_imp_M.m3 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                        bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 3", gender = "M")
+
+# Subgroup analysis for males
+# tfsat vs anemia
+tfsat_anemia_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                         subset = which(data_frame1$anemia == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Anemia: Model 1", gender = "M")
+
+# tfsat vs thalassemia
+tfsat_thal_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                       subset = which(data_frame_sg$thalassemia == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Thalassemia: Model 1", gender = "M")
+
+# tfsat vs hemochromatosis
+tfsat_hemoch_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                         subset = which(data_frame_sg$hemochromatosis == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Hemochromatosis: Model 1", gender = "M")
+
+# tfsat vs ckd
+tfsat_ckd_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                      subset = which(data_frame1$ckd == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CKD: Model 1", gender = "M")
+
+# tfsat vs diabetes
+tfsat_diabetes_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                           subset = which(data_frame1$diabetes == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Diabetes: Model 1", gender = "M")
+
+# tfsat vs hypertension
+tfsat_ht_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                     subset = which(data_frame1$hypertension == 1 & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Hypertension: Model 1", gender = "M")
+
+
+
+# tfsat vs age cat
+tfsat_children_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                           subset = which(data_frame1$age_cat == "Children" &
+                                                            data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children: Model 1", gender = "M")
+
+#
+tfsat_adolescents_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                              subset = which(data_frame1$age_cat == "Adolescents" &
+                                                               data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adolescents: Model 1", gender = "M")
+
+# Adults
+tfsat_adults_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                         subset = which(data_frame1$age_cat == "Adults" &
+                                                          data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adults: Model 1", gender = "M")
+
+# Older Adults
+tfsat_old.adults_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                             subset = which(data_frame1$age_cat == "Older Adults" &
+                                                              data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Older Adults: Model 1", gender = "M")
+
+
+# Imputed models for tfsat in male Children and Adolescents
+
+tfsat_imp_child_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 1", gender = "M")
+
+tfsat_imp_child_M.m2 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + age + bmi + smoking +
+                                              (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 2", gender = "M")
+
+tfsat_imp_child_M.m3 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + age +
+                                              creatinine + hdlc + ldlc + triacylglycerols +
+                                              bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 3", gender = "M")
+
+# tfsat vs CRP≥ 3 mg/dL
+tfsat_CRPhi_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                     subset = which(data_frame1$inflammation == "2" & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP≥ 3 mg/dL: Model 1", gender = "M")
+
+# tfsat vs CRP≥ 3 mg/dL
+tfsat_CRPint_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                       subset = which(data_frame1$inflammation == "1" & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP 1-3 mg/dL: Model 1", gender = "M")
+
+# tfsat vs CRP <1 mg/dL
+tfsat_CRPlo_M.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                        subset = which(data_frame1$inflammation == "0" & data_frame1$age >= 18 & data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP< 1 mg/dL: Model 1", gender = "M")
+
+# Combine into one dataframe
+tfsat_M.all <- rbind(tfsat_imp_M.m1, tfsat_imp_M.m2, tfsat_imp_M.m3, tfsat_anemia_M.m1,
+                    tfsat_thal_M.m1, tfsat_hemoch_M.m1, tfsat_ckd_M.m1,
+                    tfsat_diabetes_M.m1, tfsat_ht_M.m1, tfsat_children_M.m1,
+                    tfsat_adolescents_M.m1, tfsat_adults_M.m1, tfsat_old.adults_M.m1, 
+                    tfsat_M.m1, tfsat_imp_child_M.m1, tfsat_imp_child_M.m2, 
+                    tfsat_imp_child_M.m3, tfsat_CRPhi_M.m1, tfsat_CRPint_M.m1,tfsat_CRPlo_M.m1)
+
+rm(tfsat_imp_M.m1, tfsat_imp_M.m2, tfsat_imp_M.m3, tfsat_anemia_M.m1,
+   tfsat_thal_M.m1, tfsat_hemoch_M.m1, tfsat_ckd_M.m1,
+   tfsat_diabetes_M.m1, tfsat_ht_M.m1, tfsat_children_M.m1,
+   tfsat_adolescents_M.m1, tfsat_adults_M.m1, tfsat_old.adults_M.m1, 
+   tfsat_M.m1, tfsat_imp_child_M.m1, tfsat_imp_child_M.m2, 
+   tfsat_imp_child_M.m3, tfsat_CRPhi_M.m1, tfsat_CRPint_M.m1,tfsat_CRPlo_M.m1)
+saveRDS(tfsat_M.all,file=here::here("data_files","tfsat_M.all.RDS"))
+beepr::beep()
+
+```
+
+### TSAT: Females
+
+```{r}
+
+## females
+# models 1 and 2 for tfsat
+tfsat_F.m1 <- regression_F(model1, tfsat)
+
+# Unimputed models for females
+tfsat_F.m1 <- tfsat_F.m1 |>
+  filter(term == "tfsat") |>
+  select(estimate, p.value, conf.low, conf.high) |>
+  mutate(study = "Unimputed: Model 1", gender = "F")
+
+tfsat_imp_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 1", gender = "F")
+
+tfsat_imp_F.m2 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + age + bmi + smoking + diabetes + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 2", gender = "F")
+
+tfsat_imp_F.m3 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                        bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                      subset = which(data_frame1$age >= 18 &
+                                                       data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed: Model 3", gender = "F")
+
+# Subgroup analysis for females
+# tfsat vs anemia
+tfsat_anemia_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                         subset = which(data_frame1$anemia == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Anemia: Model 1", gender = "F")
+
+# tfsat vs ckd
+tfsat_ckd_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                      subset = which(data_frame1$ckd == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CKD: Model 1", gender = "F")
+
+# tfsat vs diabetes
+tfsat_diabetes_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                           subset = which(data_frame1$diabetes == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Diabetes: Model 1", gender = "F")
+
+# tfsat vs hypertension
+tfsat_ht_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                     subset = which(data_frame1$hypertension == 1 & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Hypertension: Model 1", gender = "F")
+
+# tfsat vs age cat
+tfsat_children_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                           subset = which(data_frame1$age_cat == "Children" &
+                                                            data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children: Model 1", gender = "F")
+
+# Adolescents
+tfsat_adolescents_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                              subset = which(data_frame1$age_cat == "Adolescents" &
+                                                               data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adolescents: Model 1", gender = "F")
+
+# Adults
+tfsat_adults_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                         subset = which(data_frame1$age_cat == "Adults" &
+                                                          data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Adults: Model 1", gender = "F")
+
+# Older Adults
+tfsat_old.adults_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                             subset = which(data_frame1$age_cat == "Older Adults" &
+                                                              data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Older Adults: Model 1", gender = "F")
+
+
+# Children and Adolescents groups
+# tfsat vs children
+
+# Imputed models for Children and Adolescents females
+tfsat_imp_child_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 1", gender = "F")
+
+tfsat_imp_child_F.m2 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + age + bmi + smoking +
+                                              (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 2", gender = "F")
+
+tfsat_imp_child_F.m3 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + age +
+                                              creatinine + hdlc + ldlc + triacylglycerols +
+                                              bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                            subset = which(data_frame1$age < 18 &
+                                                             data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Children and Adolescents_Imputed: Model 3", gender = "F")
+
+# tfsat vs CRP≥ 3 mg/dL
+tfsat_CRPhi_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                        subset = which(data_frame1$inflammation == "2" & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP≥ 3 mg/dL: Model 1", gender = "F")
+
+# tfsat vs CRPint
+tfsat_CRPint_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                         subset = which(data_frame1$inflammation == "1" & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP 1-3 mg/dL: Model 1", gender = "F")
+
+# tfsat vs CRP <1 mg/dL
+tfsat_CRPlo_F.m1 <- with(imp.mitml, lmer(imt ~ 1 + tfsat + (1 | clus),
+                                        subset = which(data_frame1$inflammation == "0" & data_frame1$age >= 18 & data_frame1$gender == 1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "CRP< 1 mg/dL: Model 1", gender = "F")
+
+# Combine into one dataframe
+tfsat_F.all <- rbind(tfsat_imp_F.m1, tfsat_imp_F.m2, tfsat_imp_F.m3, tfsat_anemia_F.m1,
+                     tfsat_ckd_F.m1,tfsat_diabetes_F.m1,
+                    tfsat_ht_F.m1,  tfsat_children_F.m1, tfsat_adolescents_F.m1,
+                    tfsat_adults_F.m1, tfsat_old.adults_F.m1, tfsat_F.m1,
+                    tfsat_imp_child_F.m1, tfsat_imp_child_F.m2,
+                    tfsat_imp_child_F.m3, tfsat_CRPhi_F.m1, tfsat_CRPint_F.m1,tfsat_CRPlo_F.m1 )
+
+rm(tfsat_imp_F.m1, tfsat_imp_F.m2, tfsat_imp_F.m3, tfsat_anemia_F.m1,
+    tfsat_ckd_F.m1,tfsat_diabetes_F.m1,
+   tfsat_ht_F.m1,  tfsat_children_F.m1, tfsat_adolescents_F.m1,
+   tfsat_adults_F.m1, tfsat_old.adults_F.m1, tfsat_F.m1,
+   tfsat_imp_child_F.m1, tfsat_imp_child_F.m2,
+   tfsat_imp_child_F.m3, tfsat_CRPhi_F.m1, tfsat_CRPint_F.m1,tfsat_CRPlo_F.m1 )
+
+
+saveRDS(tfsat_F.all,file = here::here("data_files","tfsat_F.all.rds"))
+beepr::beep()
+```
+
+# LOA analysis
+## Males
+```{r}
+# MALES LOA analysis - use only model 3
+
+ferritin_loo_diab1.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                                bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                              subset = which(data_frame1$age >= 18 &
+                                                               data_frame1$gender == 0 &
+                                                               data_frame1$diabetes!=1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: Diabetes=Yes", gender = "M")
+
+
+ferritin_loo_ht1.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                              bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                            subset = which(data_frame1$age >= 18 &
+                                                             data_frame1$gender == 0 &
+                                                             data_frame1$hypertension!=1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: Hypertension=Yes", gender = "M")
+
+
+ferritin_loo_ckd1.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 0 &
+                                                              data_frame1$ckd!=1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: CKD=Yes", gender = "M")
+
+
+ferritin_loo_crpI.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 0 &
+                                                              data_frame1$crp>=1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: CRP>=1", gender = "M")
+
+ferritin_loo_crpH.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 0 &
+                                                              data_frame1$crp>=3))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: CRP>=3", gender = "M")
+
+
+ferritin_loo_sm.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                              bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                            subset = which(data_frame1$age >= 18 &
+                                                             data_frame1$gender == 0 &
+                                                             data_frame1$smoking=="0"))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: Smokers", gender = "M")
+
+ferritin_loo_ldlH.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 0 &
+                                                              data_frame1$ldl<=100))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: LDL>100", gender = "M")
+
+ferritin_loo_hdlL.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 0 &
+                                                              data_frame1$hdl>=40))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: HDL<40", gender = "M")
+
+ferritin_loo_tgH.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 0 &
+                                                              data_frame1$triacylglycerols<=150))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: Triacylglycerols>150", gender = "M")
+
+
+ferritin_loo_bmiH.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 0 &
+                                                              data_frame1$bmi>25))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: BMI>25", gender = "M")
+
+ferritin_loo_adults.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 0 &
+                                                              data_frame1$age_cat=="Adults"))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: Adults", gender = "M")
+
+ferritin_loo_Oldadults.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                                 bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                               subset = which(data_frame1$age >= 18 &
+                                                                data_frame1$gender == 0 &
+                                                                data_frame1$age_cat=="Older Adults"))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: Older Adults", gender = "M")
+
+ferritin_imp.m3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                                bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                              subset = which(data_frame1$age >= 18 &
+                                                               data_frame1$gender == 0))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed data: Model 3", gender = "M")
+
+ferritin_LOA_M <- rbind(ferritin_loo_diab1.m3, ferritin_loo_ht1.m3,
+                      ferritin_loo_ckd1.m3,ferritin_loo_sm.m3,
+                      ferritin_loo_crpI.m3,ferritin_loo_crpH.m3,
+                      ferritin_loo_bmiH.m3,
+                      ferritin_loo_adults.m3,ferritin_loo_Oldadults.m3,
+                      ferritin_loo_ldlH.m3, ferritin_loo_hdlL.m3,
+                      ferritin_loo_tgH.m3,ferritin_imp.m3)
+
+rm(ferritin_loo_diab1.m3, ferritin_loo_ht1.m3,
+   ferritin_loo_ckd1.m3,ferritin_loo_sm.m3,
+   ferritin_loo_crpI.m3,ferritin_loo_crpH.m3,
+   ferritin_loo_bmiH.m3,
+   ferritin_loo_adults.m3,ferritin_loo_Oldadults.m3,
+   ferritin_loo_ldlH.m3, ferritin_loo_hdlL.m3,
+   ferritin_loo_tgH.m3, ferritin_imp.m3)
+
+
+
+ferritin_LOA_M <- ferritin_LOA_M |> 
+  mutate(estimate = round(estimate,4),
+         conf.low = round(conf.low,4),
+         conf.low=format(conf.low,scientific=FALSE),
+         conf.high = round(conf.high,3),
+         p.value = ifelse(p.value < 0.001, "<0.001", round(p.value, 3)),
+         label=ifelse(!is.na(estimate), paste0(format(estimate, scientific = FALSE),
+                                               " (", conf.low, ", ", conf.high, "), p=", p.value), NA))
+#save file
+saveRDS(ferritin_LOA_M,file=here::here("data_files","ferritin_LOA_M.rds"))
+```
+
+## LOA: Females
+```{r}
+#loa females
+ferritin_loo_diab1.f3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp +(1 | clus),
+                                              subset = which(data_frame1$age >= 18 &
+                                                               data_frame1$gender == 1 &
+                                                               data_frame1$diabetes!=1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: Diabetes=Yes", gender = "F")
+
+
+ferritin_loo_ht1.f3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                            subset = which(data_frame1$age >= 18 &
+                                                             data_frame1$gender == 1 &
+                                                             data_frame1$hypertension!=1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: Hypertension=Yes", gender = "F")
+
+
+ferritin_loo_ckd1.f3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 1 &
+                                                              data_frame1$ckd!=1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: CKD=Yes", gender = "F")
+
+
+ferritin_loo_crpI.f3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp +  (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 1 &
+                                                              data_frame1$crp>=1))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: CRP>=1", gender = "F")
+
+ferritin_loo_crpH.f3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 1 &
+                                                              data_frame1$crp>=3))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: CRP>=3", gender = "F")
+
+
+ferritin_loo_sm.f3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                           subset = which(data_frame1$age >= 18 &
+                                                            data_frame1$gender == 1 &
+                                                            data_frame1$smoking=="0"))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: Smokers", gender = "F")
+
+ferritin_loo_ldlH.f3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 1 &
+                                                              data_frame1$ldl<=100))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: LDL>100", gender = "F")
+
+ferritin_loo_hdlL.f3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 1 &
+                                                              data_frame1$hdl>=50))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: HDL<50", gender = "F")
+
+ferritin_loo_tgH.f3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                            subset = which(data_frame1$age >= 18 &
+                                                             data_frame1$gender == 1 &
+                                                             data_frame1$triacylglycerols<=150))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: Triacylglycerols>150", gender = "F")
+
+
+ferritin_loo_bmiH.f3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                             subset = which(data_frame1$age >= 18 &
+                                                              data_frame1$gender == 1 &
+                                                              data_frame1$bmi>25))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: BMI>25", gender = "F")
+
+ferritin_loo_adults.f3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                               subset = which(data_frame1$age >= 18 &
+                                                                data_frame1$gender == 1 &
+                                                                data_frame1$age_cat=="Adults"))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: Adults", gender = "F")
+
+ferritin_loo_Oldadults.f3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                                  subset = which(data_frame1$age >= 18 &
+                                                                   data_frame1$gender == 1 &
+                                                                   data_frame1$age_cat=="Older Adults"))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "LOA: Older Adults", gender = "F")
+
+ferritin_imp.f3 <- with(imp.mitml, lmer(imt ~ 1 + ferritin + age + diabetes + creatinine + hdlc + ldlc + triacylglycerols +
+                                               bmi + smoking + crp + hb + sbp + dbp + (1 | clus),
+                                                  subset = which(data_frame1$age >= 18 &
+                                                                   data_frame1$gender == 1 ))) |>
+  testEstimates(extra.pars = T) |>
+  mitml.tidy() |>
+  mutate(study = "Imputed data: Model 2", gender = "F")
+
+ferritin_LOA_F <- rbind(ferritin_loo_diab1.f3, ferritin_loo_ht1.f3,
+                        ferritin_loo_ckd1.f3,ferritin_loo_sm.f3,
+                        ferritin_loo_crpI.f3,ferritin_loo_crpH.f3,
+                        ferritin_loo_bmiH.f3,
+                        ferritin_loo_adults.f3,ferritin_loo_Oldadults.f3,
+                        ferritin_loo_ldlH.f3, ferritin_loo_hdlL.f3,
+                        ferritin_loo_tgH.f3,ferritin_imp.f3)
+
+rm(ferritin_loo_diab1.f3, ferritin_loo_ht1.f3,
+   ferritin_loo_ckd1.f3,ferritin_loo_sm.f3,
+   ferritin_loo_crpI.f3,ferritin_loo_crpH.f3,
+   ferritin_loo_bmiH.f3,
+   ferritin_loo_adults.f3,ferritin_loo_Oldadults.f3,
+   ferritin_loo_ldlH.f3, ferritin_loo_hdlL.f3,
+   ferritin_loo_tgH.f3,ferritin_imp.f3)
+
+ferritin_LOA_F <- ferritin_LOA_F |> 
+  mutate(estimate = round(estimate,4),
+         conf.low = round(conf.low,4),
+         conf.low=format(conf.low,scientific=FALSE),
+         conf.high = round(conf.high,3),
+         p.value = ifelse(p.value < 0.001, "<0.001", round(p.value, 3)),
+         label=ifelse(!is.na(estimate), paste0(format(estimate, scientific = FALSE),
+                                               " (", conf.low, ", ", conf.high, "), p=", p.value), NA))
+
+saveRDS(ferritin_LOA_F,file=here::here("data_files","ferritin_LOA_F.rds"))
+```
+
+
+# Tables
+
+```{r}
+#|include: false
+
+#Table 2-3: demographics with participant level pooled data
+#Suppl table1: Demographics broken down at study level
+
+#create a list to format variable names in the table                     
+table2.names <- list(age~"Age (years)",
+                     bmi~"BMI (kg/sq.m)",
+                     smoking~"Smoking",
+                     diabetes~"Diabetes",
+                     hypertension~"Hypertension",
+                     sbp~"SBP (mm/Hg)",
+                     dbp~"DBP (mm/Hg)",
+                     ckd~"CKD",
+                     anemia~"Anemia",
+                     hb~"Hemoglobin (g/dL)",
+                     creatinine~"Creatinine (mg/dL)",
+                     hdlc~"HDLc (mg/dL)",
+                     ldlc~"LDLc (mg/dL)",
+                     triacylglycerols~"Triacylglycerols (mg/dL)",
+                     crp~"CRP (µg/dL)",
+                     imt ~ "IMT (mm)",
+                     iron ~ "Iron (µM)",
+                     ferritin~ "Ferritin (ng/mL)",
+                     transferrin~"Transferrin (g/L)",
+                     tfsat~"TSAT (%)")
+
+#make table     
+df.table<-data_frame1 %>%
+  select(!study)%>%
+  mutate(gender=fct_recode(gender, "Males" = "0", 
+                                 "Females" = "1" ),
+         smoking=fct_recode(smoking, "Nonsmokers" = "0", 
+                            "Former Smokers" = "1", 
+                            "Current Smokers" = "2"),
+         diabetes=fct_recode(diabetes, "No Diabetes" = "0", 
+                             "Diabetes" = "1" ),
+         hypertension=fct_recode(hypertension, "No hypertension" = "0", 
+                             "Hypertension" = "1" ),
+         ckd=fct_recode(ckd, "No CKD" = "0", 
+                                 "CKD" = "1"),
+         anemia=fct_recode(anemia, "No Anemia" = "0", 
+                                 "Anemia" = "1"))
+
+my.table <- function(data) {
+  tbl <- tbl_summary(
+    data,
+    by = gender,
+    missing = "no",
+    label = table2.names
+  ) %>%
+    add_overall() %>%
+    add_p() %>%
+    add_n(statistic = "{n_miss} ({p_miss}%)") %>%
+    modify_header(n = "**Missing**") %>%
+    bold_labels() %>%
+    bold_p() %>%
+    modify_caption("Participant Characteristics (N = {N})") %>%
+    as_flex_table()
+  
+  return(tbl)
+}
+
+
+library(gtsummary)
+#supplementary table1
+suppl.table1<-data_frame%>%
+  select(study,gender,age,bmi,smoking,diabetes,
+         hypertension,sbp,dbp,ckd,anemia,
+         hb,creatinine,hdlc,ldlc,
+         triacylglycerols,crp,imt,iron,
+         ferritin,transferrin,tfsat,thalassemia,
+         hemochromatosis)%>%
+  tbl_summary(by=study,
+                         missing = "no",
+                         label =table2.names)%>%
+  add_overall()%>%
+  add_n()%>%
+  bold_labels()%>%
+  modify_caption("Participant Characteristics (N = {N})")%>%
+  as_tibble() %>% 
+  writexl::write_xlsx(., here::here("tables",'suppl.table1.xlsx'))
+
+pacman::p_load(naniar)
+
+data_frame1 |> 
+  select(!c(hi_ferritin, inflammation,age_cat,study)) |>
+  mutate(thalassemia=na_if(thalassemia,"0")) |> 
+  miss_var_summary()%>%
+  as_tibble() %>% 
+  writexl::write_xlsx(., here::here("tables",'suppl.table2.xlsx'))
+
+data_frame1 |> 
+  select(!c(hi_ferritin, inflammation,age_cat)) |>
+  mutate(thalassemia=na_if(thalassemia,"0")) |> 
+  group_by(study) |> 
+  miss_var_summary()%>%
+  as_tibble() %>% 
+  writexl::write_xlsx(., here::here("tables",'suppl.table3.xlsx'))
+
+data_frame1 |> 
+  select(!c(hi_ferritin, inflammation,age_cat,study)) |>
+  mutate(thalassemia=na_if(thalassemia,"0")) |> 
+  group_by(age_gp) |> 
+  miss_var_summary()%>%
+  as_tibble() %>% 
+  writexl::write_xlsx(., here::here("tables",'suppl.table4.xlsx'))
+
+miss_plot <- gg_miss_upset(data_frame1 |> 
+                  select(!c(anemia,thalassemia,hemochromatosis,hi_ferritin,inflammation)),
+                nsets = 10)
+ 
+ggsave(filename = "missingdata.png",
+       path="~/Docs/myRprojects/ipd_metaanalysis/graphs",
+       ggplotify::as.ggplot(miss_plot), width=12,height=7, dpi=600)
+
+```

@@ -1,0 +1,442 @@
+---
+title: "IPD Meta-Analysis: load and impute"
+
+date:  "`r Sys.Date()`"
+
+output: pdf_document
+
+
+biometrician: |
+  | Svenja Seide
+  | seide@imbi.uni-heidelberg.de
+    
+contacts: |
+  | Anand R
+  | anand.rubanagarvas@gmail.com
+  | 
+
+data-source: |
+  | single excel file per study
+  
+data-supplier: |
+  | Anand R
+  
+data-date: |  
+  | "`r Sys.Date()`"
+
+abstract: > 
+  To be added
+    
+draft: true
+
+header-includes:
+  - \usepackage{float}
+  
+---
+This Rmd file is heavily edited by me. Not the same copy that Svenja sent
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+    echo = FALSE, 
+    cache = TRUE
+)
+```
+
+```{r dependencies, include=FALSE}
+pacman::p_load(haven,lme4,foreign,tidyverse,jomo,mitml,kableExtra,labelled,
+               mice,ggmice,lattice,pan,mitools,gridExtra, easystats)
+
+options(print_format="tex")
+```
+
+<!-- Use the command: -->
+<!-- \blscape -->
+<!-- to enter Landscape mode. Use: -->
+<!-- \elscape -->
+<!-- To exit landscape mode and enter portrait mode again. -->
+
+<!--  # Read the data in --->
+
+```{r Load files}
+
+#load files
+files <- (Sys.glob("/Users/personal/Dropbox/Atherosclerosis and iron/IPD meta-analysis/spssfiles/*.sav")) 
+data <- lapply(files, function(x) read_sav(x)) #loop function to read files
+
+#read in names of data files
+aa <- strsplit(files, "_")  #split based on delimiter
+aa <- unlist(lapply(aa, function(x) x[2]))
+aa <- unlist(strsplit(aa, "data.sav")) #remove last part of file name
+
+names(data) <- aa #make the names of stored files as row names of the datafile
+
+
+data_set_ma <- list()
+for(i in 1:19){
+  data_set_ma[[i]] <- cbind(names(data[i]), data[[i]]$imt, 
+                            data[[i]]$iron, data[[i]]$ferritin, 
+                            data[[i]]$transferrin, data[[i]]$tfsat, 
+                            data[[i]]$age, data[[i]]$gender, data[[i]]$diabetes, 
+                            data[[i]]$hypertension, data[[i]]$creatinine, data[[i]]$hdlc, 
+                            data[[i]]$ldlc, data[[i]]$triacylglycerols, data[[i]]$bmi, 
+                            data[[i]]$smoking, data[[i]]$crp, 
+                            data[[i]]$thalassemia,
+                            data[[i]]$hemochromatosis, data[[i]]$ckd,data[[i]]$hb,data[[i]]$sbp, data[[i]]$dbp)
+}
+
+
+data_frame <- as.data.frame(do.call(rbind, data_set_ma))
+colnames(data_frame) <- c("study", "imt", "iron", "ferritin", "transferrin", 
+                          "tfsat", "age", "gender", "diabetes", "hypertension", 
+                          "creatinine", "hdlc", "ldlc", "triacylglycerols", 
+                          "bmi", "smoking", "crp","thalassemia", 
+                          "hemochromatosis", "ckd","hb","sbp","dbp")
+
+```
+
+
+<!-- # Data mutations --->
+
+```{r}
+#data mutations
+data_frame <-data_frame |>
+   mutate(inflammation=case_when(crp<1~ "0",
+                                 crp>=1& crp<3~ "1",
+                                 crp>=3~ "2"),
+          across(c(imt, iron, ferritin, transferrin, tfsat, age, creatinine, hdlc, ldlc, triacylglycerols, bmi, crp, hb, sbp, dbp),
+                as.numeric))|>
+  mutate(anemia = case_when(
+      age>=15 & gender==0 & hb<13.0 & hb>0 ~ "1",
+      age>=15 & gender==1 & hb<12.0 & hb>0~ "1",
+      age<5 & hb<11.0 & hb>0 ~ "1",
+      age>=5 & age<12 & hb<11.5 & hb>0~ "1",
+      age>=12 & age<15 & hb<12.0 & hb>0~ "1",
+      age>=15 & gender==0 & hb>=13.0 ~ '0',
+      age>=15 & gender==1 & hb>=12.0 ~ '0',
+      age<5 & hb>=11.0 ~'0',
+      age>=5 & age< 12 & hb>=11.5 ~ '0',
+      age>=12 & age<15 & hb>=12.0 ~ '0'),
+      age_gp=case_when(age>=18~"Adults",
+                          age<18~"Children and Adolescents"),
+      age_cat=case_when(age<13~"Children",
+                       between(age,13,17.9)~"Adolescents",
+                       between(age,18,64.9)~"Adults",
+                       age>=65~"Older Adults"),
+      hi_ferritin=case_when(tfsat>45 & gender==0 & ferritin>300 |
+                                             tfsat>45 & gender==1 & ferritin>200 ~ "1",
+                                           tfsat<=45 & gender==0 & ferritin>300 |
+                                             tfsat<=45 & gender==1 & ferritin>200 ~ "2"),
+      across(c(study, gender, diabetes, hypertension, smoking, thalassemia, hemochromatosis, ckd,
+              inflammation, anemia, age_gp,age_cat,hi_ferritin),as.factor)) 
+
+#no filters
+unfilt_df <-data_frame
+saveRDS(unfilt_df,file=here::here("data_files","unfilt_df.RDS"))
+count_df <- unfilt_df%>%
+  summarize(
+    high_imt = sum(imt > 1.5, na.rm = TRUE),
+    high_crp = sum(crp>10, na.rm = TRUE),
+    high_ferritin = sum(hemochromatosis=="0"&hi_ferritin == "1", na.rm = TRUE)
+  )
+
+saveRDS(count_df,file=here::here("data_files","count_df.RDS"))
+
+#imt filtered
+data_frame_sg <- data_frame
+data_frame <-data_frame |>
+  filter(imt<=1.5|is.na(imt),
+         hemochromatosis!="1"|is.na(hemochromatosis),
+         thalassemia!="1"|is.na(thalassemia))
+
+data_frame1 <- data_frame|> 
+  filter(hi_ferritin!="1"|is.na(hi_ferritin),
+         crp<=10|is.na(crp))
+  
+saveRDS(data_frame,file=here::here("data_files","data_frame.RDS"))
+saveRDS(data_frame1,file=here::here("data_files","data_frame1.RDS"))
+saveRDS(data_frame_sg,file=here::here("data_files","data_frame_sg.RDS"))
+```
+
+\clearpage
+
+# Complete Case Analysis
+
+
+all analyses are performed without imputation (complete case analysis), this means that all patients with at least one missing covariate that is used in the analysis are excluded. As a consequence, studies that systematically didn't include a variable cannot be used in the analysis.
+
+## iron
+
+The model with the additional adjustment variables cannot be estimated as no observation is included. 
+
+```{r Function-complete cases, results="asis"}
+#normalizing variables by scale function
+df.comp_adults <- data_frame |>
+  filter(age>=18) |>
+  dplyr::mutate(iron = scale(iron), 
+         ferritin = scale(ferritin), 
+         transferrin = scale(transferrin), 
+         tfsat = scale(tfsat), 
+         age = scale(age), 
+         creatinine = scale(creatinine), 
+         hdlc = scale(hdlc), 
+         ldlc = scale(ldlc), 
+         triacylglycerols = scale(triacylglycerols),
+         bmi = scale(bmi), 
+         crp = scale(crp),
+         sbp= scale(sbp),
+         dbp=scale(dbp),
+         hb=scale(hb))
+
+
+library(lmerTest)
+
+#define the function to carrout regression and summarize the result
+regression= function(model,var) {
+  form = reformulate(c(model,var), response = imt)
+  lmer(form, data = df.comp_adults) |> 
+    model_parameters()
+}
+#define variables
+imt="imt" 
+iron="iron"
+ferritin="ferritin"
+transferrin="transferrin"
+tfsat="tfsat"
+
+#define models
+model1 = c("1","(1 | study)")
+model2=c(model1,"age","gender","diabetes","bmi","smoking")
+model3=c(model2,"creatinine","crp","hdlc","ldlc","triacylglycerols","sbp","dbp","hb")
+
+```
+### Unimputed models
+
+```{r Regressions_Complete cases, results="asis"}
+#models 1 and 2 for iron
+iron.m1<-regression(model1,iron)
+iron.m1 <- iron.m1 |> 
+  mutate(model="Model 1")
+iron.m2<-regression(model2,iron)
+iron.m2 <- iron.m2 |> 
+  mutate(model="Model 2")
+#models 1 and 2 for ferritin
+ferritin.m1<-regression(model1,ferritin)
+ferritin.m2<-regression(model2,ferritin)
+ferritin.m1 <- ferritin.m1 |> 
+  mutate(model="Model 1")
+ferritin.m2 <- ferritin.m2 |> 
+  mutate(model="Model 2")
+
+#models 1 and 2 for transferrin
+transferrin.m1<-regression(model1,transferrin)
+transferrin.m2<-regression(model2,transferrin)
+transferrin.m1 <- transferrin.m1 |> 
+  mutate(model="Model 1")
+transferrin.m2 <- transferrin.m2 |> 
+  mutate(model="Model 2")
+
+#models 1 and 2 for tfsat
+tfsat.m1<-regression(model1,tfsat)
+tfsat.m2<-regression(model2,tfsat)
+tfsat.m1 <- tfsat.m1 |> 
+  mutate(model="Model 1")
+tfsat.m2 <- tfsat.m2 |> 
+  mutate(model="Model 2")
+
+# combine models
+complete_all <- bind_rows(iron.m1[2,1:12], iron.m2[8,1:12],
+                          ferritin.m1[2,1:12], ferritin.m2[8,1:12],
+                          transferrin.m1[2,1:12], transferrin.m2[8,1:12],
+                          tfsat.m1[2,1:12], tfsat.m2[8,1:12])
+
+#Save the regression models with unimputed data
+saveRDS(complete_all,file=here::here("data_files","complete_all.RDS"))
+
+#analysis for atherosclerotic plaque
+unfilt_df <- readRDS(file=here::here("data_files","unfilt_df.RDS")) |> 
+  mutate(plaque=if_else(imt>1.5,1,0),
+         plaque=as.factor(plaque))
+
+#filter for males
+unfilt_m <- unfilt_df |> 
+  filter(gender=="0") |>
+  dplyr::mutate(iron = scale(iron), 
+                ferritin = scale(ferritin), 
+                transferrin = scale(transferrin), 
+                tfsat = scale(tfsat))
+
+#filter for females
+unfilt_f <- unfilt_df |> 
+  filter(gender=="1") |>
+  dplyr::mutate(iron = scale(iron), 
+                ferritin = scale(ferritin), 
+                transferrin = scale(transferrin), 
+                tfsat = scale(tfsat))
+
+library(easystats)
+plaque <- "plaque"
+iron <- "iron"
+age <- "age"
+diabetes <- "diabetes"
+ferritin <- "ferritin"
+transferrin <- "transferrin"
+tfsat <- "tfsat"
+#males
+iron_plaque.m <- glm(plaque~iron, family=binomial, data=unfilt_m) |>
+  model_parameters(exponentiate = TRUE)
+
+ferritin_plaque.m <- glm(plaque~ferritin, family=binomial, data=unfilt_m) |>
+  model_parameters(exponentiate = TRUE)
+
+transferrin_plaque.m <- glm(plaque~transferrin, family=binomial, data=unfilt_m) |>
+  model_parameters(exponentiate = TRUE)
+
+tfsat_plaque.m <- glm(plaque~tfsat, family=binomial, data=unfilt_m) |>
+  model_parameters(exponentiate = TRUE)
+
+#combine
+plaque_M <- rbind(iron_plaque.m[2,1:9],ferritin_plaque.m[2,1:9],
+                  transferrin_plaque.m[2,1:9],tfsat_plaque.m[2,1:9])
+
+#females
+iron_plaque.f <- glm(plaque~iron, family=binomial, data=unfilt_f) |>
+  model_parameters(exponentiate = TRUE)
+
+ferritin_plaque.f <- glm(plaque~ferritin, family=binomial, data=unfilt_f) |>
+  model_parameters(exponentiate = TRUE)
+
+transferrin_plaque.f <- glm(plaque~transferrin, family=binomial, data=unfilt_f) |>
+  model_parameters(exponentiate = TRUE)
+
+tfsat_plaque.f <- glm(plaque~tfsat, family=binomial, data=unfilt_f) |>
+  model_parameters(exponentiate = TRUE)
+
+#combine
+plaque_F <- rbind(iron_plaque.f[2,1:9],ferritin_plaque.f[2,1:9],
+                  transferrin_plaque.f[2,1:9],tfsat_plaque.f[2,1:9])
+
+rm(iron_plaque.m,ferritin_plaque.m,transferrin_plaque.m,tfsat_plaque.m,
+   iron_plaque.f,ferritin_plaque.f,transferrin_plaque.f,tfsat_plaque.f)
+
+saveRDS(plaque_M,file=here::here("data_files","plaque_M.rds"))
+saveRDS(plaque_F,file=here::here("data_files","plaque_F.rds"))
+
+
+```
+
+
+### Imputation
+```{r Imputation, include=FALSE}
+
+Y<-data_frame|>
+  dplyr::select(!c(study, gender, hypertension, thalassemia, hemochromatosis, ckd,
+              inflammation, anemia, age_gp,age_cat,hi_ferritin))
+clus <- data_frame[, "study"]
+nburn = as.integer(500)
+nbetween = as.integer(500)
+nimp = as.integer(5)
+set.seed(58982)
+
+m_imp <- jomo::jomo(Y = Y, clus = clus, nburn = nburn, nbetween = nbetween, nimp = nimp, meth = "common")
+
+imp.mitml<-jomo2mitml.list(m_imp)
+
+
+```
+
+
+```{r Scale Imputed variables}
+#scale variables for each variable in the list
+imp.mitml[[1]] <- imp.mitml[[1]] |>
+  mutate(iron = scale(iron), 
+         ferritin = scale(ferritin), 
+         transferrin = scale(transferrin), 
+         tfsat = scale(tfsat), 
+         age = scale(age), 
+         creatinine = scale(creatinine), 
+         hdlc = scale(hdlc), 
+         ldlc = scale(ldlc), 
+         triacylglycerols = scale(triacylglycerols),
+         bmi = scale(bmi), 
+         crp = scale(crp),
+         sbp= scale(sbp),
+         dbp=scale(dbp),
+         hb=scale(hb))
+
+imp.mitml[[2]] <- imp.mitml[[2]] |>
+  mutate(iron = scale(iron), 
+         ferritin = scale(ferritin), 
+         transferrin = scale(transferrin), 
+         tfsat = scale(tfsat), 
+         age = scale(age), 
+         creatinine = scale(creatinine), 
+         hdlc = scale(hdlc), 
+         ldlc = scale(ldlc), 
+         triacylglycerols = scale(triacylglycerols),
+         bmi = scale(bmi), 
+         crp = scale(crp),
+         sbp= scale(sbp),
+         dbp=scale(dbp),
+         hb=scale(hb))
+
+imp.mitml[[3]] <- imp.mitml[[3]] |>
+  mutate(iron = scale(iron), 
+         ferritin = scale(ferritin), 
+         transferrin = scale(transferrin), 
+         tfsat = scale(tfsat), 
+         age = scale(age), 
+         creatinine = scale(creatinine), 
+         hdlc = scale(hdlc), 
+         ldlc = scale(ldlc), 
+         triacylglycerols = scale(triacylglycerols),
+         bmi = scale(bmi), 
+         crp = scale(crp),
+         sbp= scale(sbp),
+         dbp=scale(dbp),
+         hb=scale(hb))
+
+
+imp.mitml[[4]] <- imp.mitml[[4]] |>
+  mutate(iron = scale(iron), 
+         ferritin = scale(ferritin), 
+         transferrin = scale(transferrin), 
+         tfsat = scale(tfsat), 
+         age = scale(age), 
+         creatinine = scale(creatinine), 
+         hdlc = scale(hdlc), 
+         ldlc = scale(ldlc), 
+         triacylglycerols = scale(triacylglycerols),
+         bmi = scale(bmi), 
+         crp = scale(crp),
+         sbp= scale(sbp),
+         dbp=scale(dbp),
+         hb=scale(hb))
+
+imp.mitml[[5]] <- imp.mitml[[5]] |>
+  mutate(iron = scale(iron), 
+         ferritin = scale(ferritin), 
+         transferrin = scale(transferrin), 
+         tfsat = scale(tfsat), 
+         age = scale(age), 
+         creatinine = scale(creatinine), 
+         hdlc = scale(hdlc), 
+         ldlc = scale(ldlc), 
+         triacylglycerols = scale(triacylglycerols),
+         bmi = scale(bmi), 
+         crp = scale(crp),
+         sbp= scale(sbp),
+         dbp=scale(dbp),
+         hb=scale(hb))
+
+saveRDS(imp.mitml,file = here::here("data_files","imputed_data.rds"))
+beepr::beep()
+
+```
+
+
+\clearpage
+
+## Session Information
+
+```{r session-info, echo=FALSE} 
+sessionInfo()
+```
